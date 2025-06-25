@@ -1,5 +1,9 @@
 <# Monitor and Deploy ScreenConnect - Isaac Good
 
+1.2 / 2025-06-23
+    Changed - Write-Host to Write-Information or Write-Verbose and added preference variables for each
+    Changed - Combined some if statements
+    Changed - Moved Company Name and Friendly Name code to Install-SC function
 1.1 / 2025-06-16
     Added - Reinstall versions older than 25.4.16.9293 (broken by 25.4 binary signing changes)
     Added - Reenable service if disabled
@@ -37,7 +41,7 @@ $ServiceName = 'ScreenConnect Client ()'
 
 # Your full ScreenConnect domain with NO trailing slash
 # Example: 'https://my.screenconnect.com'
-$Domain = ''
+$Domain = 'https://'
 
 # Write ScreenConnect join URL to an RMM field
 $RMMField = $true
@@ -59,6 +63,10 @@ $ForceReinstall = $false
 # Download path and filename
 $FilePath = "$env:temp\sc.msi"
 
+# Set Write-Information & Write-Verbose console output preferences
+$InformationPreference = 'Continue'
+$VerbosePreference = 'SilentlyContinue'
+
 ##### END OF VARIABLES #####
 
 # Determine if running in Datto RMM or Syncro
@@ -67,26 +75,29 @@ $Syncro = Get-Module | Where-Object { $_.ModuleBase -match 'Syncro' }
 if ($Syncro) { Import-Module $env:SyncroModule -DisableNameChecking }
 
 function Exit-WithError {
-    param ( $Text )
-    Write-Host $Text
+    param ($Text)
     if ($Datto) {
-        Write-Host '<-Start Result->';Write-Host "Alert=$Text";Write-Host '<-End Result->'
-    }
-    if ($Syncro) {
+        Write-Information '<-Start Result->'; Write-Information "Alert=$Text"; Write-Information '<-End Result->'
+    } elseif ($Syncro) {
+        Write-Information $Text
         Rmm-Alert -Category "Monitor ScreenConnect" -Body $Text
+    } else {
+        Write-Information $Text
     }
     Start-Sleep 10 # Give us a chance to view output when running interactively
     exit 1
 }
+
 function Exit-NoError {
-    param ( $Text )
-    Write-Host $Text
+    param ($Text)
     if ($Datto) {
-        Write-Host '<-Start Result->';Write-Host "Status=$Text";Write-Host '<-End Result->'
-    }
-    if ($Syncro) {
+        Write-Information '<-Start Result->'; Write-Information "Status=$Text"; Write-Information '<-End Result->'
+    } elseif ($Syncro) {
+        Write-Information $Text
         Rmm-Alert -Category "Monitor ScreenConnect" -Body $Text
         Close-Rmm-Alert -Category "Monitor ScreenConnect"
+    } else {
+        Write-Information $Text
     }
     Start-Sleep 10 # Give us a chance to view output when running interactively
     exit 0
@@ -101,15 +112,25 @@ function Remove-ExistingInstall {
 }
 
 function Install-SC {
+    # Get Company Name
+    if ($Datto) { $CompanyName = $env:CS_PROFILE_NAME }
+    if ($CompanyName.length -lt 1 ) {
+        Write-Information "Unable to get Company Name, it will be left blank"
+    } else {
+        Write-Verbose "Company Name found to use for install: $CompanyName"
+    }
+    # Escape characters like '&' so names doesn't get improperly abbreviated
+    $CompanyName = [uri]::EscapeDataString($CompanyName)
+    $FriendlyName = [uri]::EscapeDataString($FriendlyName)
     $MSIURL = "$Domain/Bin/ScreenConnect.ClientSetup.msi?e=Access&y=Guest&t=$FriendlyName&c=$CompanyName&c=&c=&c=&c=&c=&c=&c="
-    Write-Host "Downloading installer: $MSIURL"
+    Write-Verbose "Downloading installer: $MSIURL"
     Invoke-WebRequest -Uri $MSIURL -OutFile $FilePath
-    Write-Host "Installing MSI from: $FilePath"
+    Write-Verbose "Installing MSI from: $FilePath"
     Start-Process "msiexec.exe" -ArgumentList "/i `"$FilePath`" /quiet" -Wait
     Remove-Item $FilePath -Force
     if ((Test-Service) -ne 'Running') {
         Exit-WithError "Service not running, install failed"
-    } else { Write-Host "Install successful" }
+    } else { Write-Information "Install successful" }
 }
 
 function Test-InstallTooOld {
@@ -132,35 +153,25 @@ function Test-Service {
     }
 }
 
-# Get Company Name
-if ($Datto) { $CompanyName = $env:CS_PROFILE_NAME }
-if ($CompanyName.length -lt 1 ) {
-    Write-Host "Unable to get Company Name, it will be left blank"
-}
-
-# Escape characters like '&' so names doesn't get improperly abbreviated
-$CompanyName = [uri]::EscapeDataString($CompanyName)
-$FriendlyName = [uri]::EscapeDataString($FriendlyName)
-
 if ($ForceReinstall -eq $true) { Install-SC }
 
 # Test the service
 switch (Test-Service) {
     'Running' {
-        Write-Host "$ServiceName service is running"
+        Write-Information "$ServiceName service is running"
     }
     'Not Found' {
-        Write-Host "$ServiceName service not found, installing"
+        Write-Information "$ServiceName service not found, installing"
         Install-SC
     }
     'Stopped' {
-        Write-Host "$ServiceName service is not running or disabled, attempting to start it"
+        Write-Information "$ServiceName service is not running or disabled, attempting to start it"
         Set-Service $ServiceName -StartupType Automatic # Enable service if it is disabled/manual
         Start-Service $ServiceName
         if ((Test-Service) -eq 'Running') {
             Exit-NoError "Service was not running or disabled, it has been started"
         } else {
-            Write-Host "Service could not be started, forcing removal & attempting reinstall"
+            Write-Information "Service could not be started, forcing removal & attempting reinstall"
             Remove-ExistingInstall
             Install-SC
         }
@@ -173,11 +184,11 @@ if ((Test-Service) -ne 'Running') {
 
 # Test the install age
 if ($InstallTooOldCheck -and (Test-InstallTooOld)) {
-    Write-Host "$ServiceName installed on: $InstallDate"
-    Write-Host "Install is old, attempting update"
+    Write-Verbose "$ServiceName installed on: $InstallDate"
+    Write-Information "Install is old, attempting update"
     Install-SC
     if (Test-InstallTooOld) {
-        Write-Host "Update failed, forcing removal & reattempting install"
+        Write-Information "Update failed, forcing removal & reattempting install"
         Remove-ExistingInstall
         Install-SC
         if (Test-InstallTooOld) {
@@ -187,9 +198,8 @@ if ($InstallTooOldCheck -and (Test-InstallTooOld)) {
 }
 
 if ($Datto) {
-    Write-Host '<-Start Result->';Write-Host "Status=OK";Write-Host '<-End Result->'
-}
-if ($Syncro) {
+    Write-Information '<-Start Result->'; Write-Information "Status=OK"; Write-Information '<-End Result->'
+} elseif ($Syncro) {
     Close-Rmm-Alert -Category "Monitor ScreenConnect"
 }
 
@@ -198,15 +208,11 @@ if ($RMMField -eq $true) {
     $ServiceCommandLine = (Get-ItemProperty "HKLM:\SYSTEM\ControlSet001\Services\$ServiceName").ImagePath
     $GUID = ($ServiceCommandLine -split '(?<=\&s=)(.*)(?=\&k)')[1] # Extract between &s= and &k
     $ScreenConnectUrl = "$Domain/Host#Access/All%20Machines//$GUID/Join" # Yes, there is supposed to be two slashes
-    Write-Host "ScreenConnect URL: $ScreenConnectUrl"
-    if ($Datto) {
-        if ($RMMFieldDatto -ge 1) {
-            New-ItemProperty "HKLM:\Software\CentraStage" -Name "custom$RMMFieldDatto" -Value $ScreenConnectUrl | Out-Null
-        }
+    Write-Verbose "ScreenConnect URL: $ScreenConnectUrl"
+    if ($Datto -and $RMMFieldDatto -ge 1) {
+        New-ItemProperty "HKLM:\Software\CentraStage" -Name "custom$RMMFieldDatto" -Value $ScreenConnectUrl | Out-Null
     }
-    if ($Syncro) {
-        if ($null -ne $RMMFieldSyncro) {
-            Set-Asset-Field -Name "$RMMFieldSyncro" -Value $ScreenConnectUrl
-        }
+    if ($Syncro -and $null -ne $RMMFieldSyncro) {
+        Set-Asset-Field -Name "$RMMFieldSyncro" -Value $ScreenConnectUrl
     }
 }
