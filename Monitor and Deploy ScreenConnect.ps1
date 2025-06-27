@@ -77,7 +77,7 @@ if ($Syncro) { Import-Module $env:SyncroModule -DisableNameChecking }
 function Exit-WithError {
     param ($Text)
     if ($Datto) {
-        Write-Information '<-Start Result->'; Write-Information "Alert=$Text"; Write-Information '<-End Result->'
+        Write-Information "<-Start Result->Alert=$Text<-End Result->"
     } elseif ($Syncro) {
         Write-Information $Text
         Rmm-Alert -Category "Monitor ScreenConnect" -Body $Text
@@ -198,7 +198,7 @@ if ($InstallTooOldCheck -and (Test-InstallTooOld)) {
 }
 
 if ($Datto) {
-    Write-Information '<-Start Result->'; Write-Information "Status=OK"; Write-Information '<-End Result->'
+    Write-Information '<-Start Result->Status=OK<-End Result->'
 } elseif ($Syncro) {
     Close-Rmm-Alert -Category "Monitor ScreenConnect"
 }
