@@ -1,5 +1,8 @@
 <# Monitor and Deploy ScreenConnect - Isaac Good
 
+1.3 / 2026-03-23
+    Fixed - Wait 5 seconds after MSI installation to give service time to start before verifying install success
+    Fixed - Syncro detection was checking for module that isn't loaded yet, switched to service check like Datto
 1.2 / 2025-06-23
     Changed - Write-Host to Write-Information or Write-Verbose and added preference variables for each
     Changed - Combined some if statements
@@ -44,11 +47,10 @@ $ServiceName = 'ScreenConnect Client ()'
 $Domain = 'https://'
 
 # Write ScreenConnect join URL to an RMM field
-$RMMField = $true
-# Name of Custom Asset Field you created in Syncro
-$RMMFieldSyncro = 'SC'
-# Number of User Defined Field to use in Datto
-$RMMFieldDatto = '14'
+# Syncro Custom Asset Field (CAF) name (leave blank for no output to field)
+$RMMFieldSyncro = ''
+# Datto RMM User Defined Field (UDF) number (leave blank for no output to field)
+$RMMFieldDatto = ''
 
 # Check the agent installation age
 # If you update your ScreenConnect server manually make sure you set a calendar reminder,
@@ -61,7 +63,7 @@ $InstallTooOldThreshold = '180'
 $ForceReinstall = $false
 
 # Download path and filename
-$FilePath = "$env:temp\sc.msi"
+$FilePath = "$env:temp\ScreenConnect.msi"
 
 # Set Write-Information & Write-Verbose console output preferences
 $InformationPreference = 'Continue'
@@ -71,7 +73,7 @@ $VerbosePreference = 'SilentlyContinue'
 
 # Determine if running in Datto RMM or Syncro
 $Datto = Get-Service | Where-Object { $_.DisplayName -match 'Datto RMM' }
-$Syncro = Get-Module | Where-Object { $_.ModuleBase -match 'Syncro' }
+$Syncro = Get-Service | Where-Object { $_.DisplayName -match 'Syncro' }
 if ($Syncro) { Import-Module $env:SyncroModule -DisableNameChecking }
 
 function Exit-WithError {
@@ -127,6 +129,7 @@ function Install-SC {
     Invoke-WebRequest -Uri $MSIURL -OutFile $FilePath
     Write-Verbose "Installing MSI from: $FilePath"
     Start-Process "msiexec.exe" -ArgumentList "/i `"$FilePath`" /quiet" -Wait
+    Start-Sleep 5
     Remove-Item $FilePath -Force
     if ((Test-Service) -ne 'Running') {
         Exit-WithError "Service not running, install failed"
