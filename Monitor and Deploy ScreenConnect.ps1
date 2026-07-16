@@ -1,5 +1,8 @@
 <# Monitor and Deploy ScreenConnect - Isaac Good
 
+1.4 / 2026-07-16
+    Fixed - Changed filename to 'ScreenConnect.ClientSetup.msi' as it's now considered 'tampering' to change it, preventing silent install
+    Changed - Test-Service now checks for services set to 'Disabled' (may be deleted but still running) and kills processes for accurate status detection
 1.3 / 2026-03-23
     Fixed - Wait 5 seconds after MSI installation to give service time to start before verifying install success
     Fixed - Syncro detection was checking for module that isn't loaded yet, switched to service check like Datto
@@ -63,7 +66,7 @@ $InstallTooOldThreshold = '180'
 $ForceReinstall = $false
 
 # Download path and filename
-$FilePath = "$env:temp\ScreenConnect.msi"
+$FilePath = "$env:temp\ScreenConnect.ClientSetup.msi"
 
 # Set Write-Information & Write-Verbose console output preferences
 $InformationPreference = 'Continue'
@@ -144,6 +147,12 @@ function Test-InstallTooOld {
 }
 
 function Test-Service {
+    # It's possible for services to be 'deleted' but still be running (shows as 'Disabled')
+    # If that's the case we kill the processes first so service deletion completes and we get an accurate status
+    if ((Get-Service $ServiceName -ErrorAction SilentlyContinue).StartType -eq 'Disabled') {
+        Get-Process "ScreenConnect*" | Where-Object {$_.Path -like "*$ServiceName*"} | Stop-Process -Force
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    }
     $ServiceStatus = (Get-Service $ServiceName -ErrorAction SilentlyContinue).Status
     Start-Sleep 4 # Wait to ensure service isn't flipping between states
     $ServiceStatus2 = (Get-Service $ServiceName -ErrorAction SilentlyContinue).Status
