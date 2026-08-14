@@ -1,5 +1,8 @@
 <# Monitor and Deploy ScreenConnect - Isaac Good
 
+1.5 / 2026-08-14
+    Changed - In order to fix corrupt/partial installs, Remove-ExistingInstall has been merged into the Install-SC function
+    Changed - Minimum version number is now a variable called $InstallTooOldVersion at the top of the script for easy updating
 1.4 / 2026-07-16
     Fixed - Changed filename to 'ScreenConnect.ClientSetup.msi' as it's now considered 'tampering' to change it, preventing silent install
     Changed - Test-Service now checks for services set to 'Disabled' (may be deleted but still running) and kills processes for accurate status detection
@@ -55,12 +58,14 @@ $RMMFieldSyncro = ''
 # Datto RMM User Defined Field (UDF) number (leave blank for no output to field)
 $RMMFieldDatto = ''
 
-# Check the agent installation age
-# If you update your ScreenConnect server manually make sure you set a calendar reminder,
+# Check the agent installation age and reinstall if needed
+# If you update your ScreenConnect server manually/rarely make sure you set a calendar reminder,
 # recurring ticket or similar to keep it updated or you risk getting a flood of alerts!
 $InstallTooOldCheck = $true
 # Number of days since installation to consider an agent 'too old'
 $InstallTooOldThreshold = '180'
+# Minimum version number to consider up to date
+$InstallTooOldVersion = '26.5.3.9704'
 
 # Force reinstall regardless of age/service status
 $ForceReinstall = $false
@@ -108,15 +113,13 @@ function Exit-NoError {
     exit 0
 }
 
-function Remove-ExistingInstall {
+function Install-SC {
+    # Remove any previous installation remnants that can prevent install
     Get-ChildItem "HKLM:\SOFTWARE\Classes\Installer\Products\*\" | Get-ItemProperty | Where-Object ProductName -Like "$ServiceName" | Remove-Item -Recurse -Force
     Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\" | Get-ItemProperty | Where-Object DisplayName -Like "$ServiceName" | Remove-Item -Recurse -Force
     Get-ChildItem "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\" | Get-ItemProperty | Where-Object DisplayName -Like "$ServiceName" | Remove-Item -Recurse -Force
     sc.exe delete $ServiceName # not using Remove-Service to maintain PS5 compatibility
     Stop-Process -Name msiexec -Force -ErrorAction SilentlyContinue
-}
-
-function Install-SC {
     # Get Company Name
     if ($Datto) { $CompanyName = $env:CS_PROFILE_NAME }
     if ($CompanyName.length -lt 1 ) {
@@ -143,7 +146,7 @@ function Test-InstallTooOld {
     $InstallKey = Get-ChildItem "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall" | Where-Object { $_.GetValue( "DisplayName" ) -like $ServiceName }
     $InstallVersion = Get-ItemProperty -Path "Registry::$InstallKey" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DisplayVersion
     $global:InstallDate = Get-ItemProperty -Path "Registry::$InstallKey" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty InstallDate
-    if ($InstallDate -lt ((Get-Date).AddDays(-$InstallTooOldThreshold).ToString("yyyyMMdd")) -or $InstallVersion -lt "25.4.16.9293") { return $true }
+    if ($InstallDate -lt ((Get-Date).AddDays(-$InstallTooOldThreshold).ToString("yyyyMMdd")) -or $InstallVersion -lt $InstallTooOldVersion) { return $true }
 }
 
 function Test-Service {
@@ -184,7 +187,6 @@ switch (Test-Service) {
             Exit-NoError "Service was not running or disabled, it has been started"
         } else {
             Write-Information "Service could not be started, forcing removal & attempting reinstall"
-            Remove-ExistingInstall
             Install-SC
         }
     }
@@ -200,8 +202,7 @@ if ($InstallTooOldCheck -and (Test-InstallTooOld)) {
     Write-Information "Install is old, attempting update"
     Install-SC
     if (Test-InstallTooOld) {
-        Write-Information "Update failed, forcing removal & reattempting install"
-        Remove-ExistingInstall
+        Write-Information "Update failed, forcing reinstall"
         Install-SC
         if (Test-InstallTooOld) {
             Exit-WithError "Version is old, reinstall failed"
