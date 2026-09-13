@@ -1,5 +1,7 @@
 <# Monitor and Deploy ScreenConnect - Isaac Good
 
+1.6 / 2026-09-13
+    Fixed - RMM field code not working, introduced with 1.3
 1.5 / 2026-08-14
     Changed - In order to fix corrupt/partial installs, Remove-ExistingInstall has been merged into the Install-SC function
     Changed - Minimum version number is now a variable called $InstallTooOldVersion at the top of the script for easy updating
