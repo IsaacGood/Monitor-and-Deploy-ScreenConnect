@@ -219,15 +219,13 @@ if ($Datto) {
 }
 
 # Get the ScreenConnect GUID and build the URL to insert into the custom field
-if ($RMMField -eq $true) {
-    $ServiceCommandLine = (Get-ItemProperty "HKLM:\SYSTEM\ControlSet001\Services\$ServiceName").ImagePath
-    $GUID = ($ServiceCommandLine -split '(?<=\&s=)(.*)(?=\&k)')[1] # Extract between &s= and &k
-    $ScreenConnectUrl = "$Domain/Host#Access/All%20Machines//$GUID/Join" # Yes, there is supposed to be two slashes
-    Write-Verbose "ScreenConnect URL: $ScreenConnectUrl"
-    if ($Datto -and $RMMFieldDatto -ge 1) {
-        New-ItemProperty "HKLM:\Software\CentraStage" -Name "custom$RMMFieldDatto" -Value $ScreenConnectUrl | Out-Null
-    }
-    if ($Syncro -and $null -ne $RMMFieldSyncro) {
-        Set-Asset-Field -Name "$RMMFieldSyncro" -Value $ScreenConnectUrl
-    }
+$ServiceCommandLine = (Get-ItemProperty "HKLM:\SYSTEM\ControlSet001\Services\$ServiceName").ImagePath
+$GUID = ($ServiceCommandLine -split '(?<=\&s=)(.*)(?=\&k)')[1] # Extract between &s= and &k
+$ScreenConnectUrl = "$Domain/Host#Access/All%20Machines//$GUID/Join" # Yes, there is supposed to be two slashes
+Write-Verbose "ScreenConnect URL: $ScreenConnectUrl"
+if ($Datto -and $RMMFieldDatto -ge 1) {
+    New-ItemProperty "HKLM:\Software\CentraStage" -Name "custom$RMMFieldDatto" -Value $ScreenConnectUrl | Out-Null
+}
+if ($Syncro -and $null -ne $RMMFieldSyncro) {
+    Set-Asset-Field -Name "$RMMFieldSyncro" -Value $ScreenConnectUrl
 }
