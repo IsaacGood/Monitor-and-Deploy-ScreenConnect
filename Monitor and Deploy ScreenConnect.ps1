@@ -1,5 +1,7 @@
 <# Monitor and Deploy ScreenConnect - Isaac Good
 
+1.7 / 2026-11-02
+    Added - Option to add a random delay before downloading the installer to avoid overwhelming the server during mass deployments
 1.6 / 2026-09-13
     Fixed - RMM field code not working, introduced with 1.3
 1.5 / 2026-08-14
@@ -67,10 +69,14 @@ $InstallTooOldCheck = $true
 # Number of days since installation to consider an agent 'too old'
 $InstallTooOldThreshold = '180'
 # Minimum version number to consider up to date
-$InstallTooOldVersion = '26.5.3.9704'
+$InstallTooOldVersion = '26.7.6.9783'
 
 # Force reinstall regardless of age/service status
 $ForceReinstall = $false
+
+# Add a random delay before downloading the installer to avoid overwhelming the server during mass deployments
+# Maximum random delay in seconds, or set to 0 to disable
+$RandomDelay = 0
 
 # Download path and filename
 $FilePath = "$env:temp\ScreenConnect.ClientSetup.msi"
@@ -128,6 +134,11 @@ function Install-SC {
         Write-Information "Unable to get Company Name, it will be left blank"
     } else {
         Write-Verbose "Company Name found to use for install: $CompanyName"
+    }
+    if ($RandomDelay -gt 0) {
+        $RandomDelaySeconds = Get-Random -Minimum 1 -Maximum $RandomDelay
+        Write-Information "Random delay enabled, waiting $RandomDelaySeconds seconds before downloading installer"
+        Start-Sleep -Seconds $RandomDelaySeconds
     }
     # Escape characters like '&' so names doesn't get improperly abbreviated
     $CompanyName = [uri]::EscapeDataString($CompanyName)
